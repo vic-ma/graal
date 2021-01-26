@@ -93,6 +93,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
 import static com.oracle.truffle.api.LanguageAccessor.ENGINE;
 
@@ -3312,6 +3314,31 @@ public abstract class TruffleLanguage<C> {
             Objects.requireNonNull(types, "types");
             Objects.requireNonNull(classOverrides, "classOverrides");
             return createHostAdapterClassImpl(types, classOverrides);
+        }
+
+        @TruffleBoundary
+        public Future<Void> runThreadLocalAsynchronous(Thread[] threads, Consumer<Thread> action) {
+            return runThreadLocal(threads, action, true);
+        }
+
+        @TruffleBoundary
+        public Future<Void> runThreadLocalSynchronous(Thread[] threads, Consumer<Thread> action) {
+            return runThreadLocal(threads, action, false);
+        }
+
+        private Future<Void> runThreadLocal(Thread[] threads, Consumer<Thread> action, boolean async) {
+            Objects.requireNonNull(action);
+            if (threads != null) {
+                for (int i = 0; i < threads.length; i++) {
+                    Objects.requireNonNull(threads[i]);
+                }
+            }
+            checkDisposed();
+            try {
+                return LanguageAccessor.ENGINE.runThreadLocal(polyglotLanguageContext, threads, action, async);
+            } catch (Throwable t) {
+                throw engineToLanguageException(t);
+            }
         }
 
         private Object createHostAdapterClassImpl(Class<?>[] types, Object classOverrides) {
