@@ -171,7 +171,6 @@ import com.oracle.svm.hosted.FeatureImpl.BeforeAnalysisAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.BeforeCompilationAccessImpl;
 import com.oracle.svm.hosted.FeatureImpl.DuringAnalysisAccessImpl;
 import com.oracle.svm.hosted.SVMHost;
-import com.oracle.svm.hosted.code.CompilationInfoSupport;
 import com.oracle.svm.hosted.meta.HostedType;
 import com.oracle.svm.hosted.phases.ExperimentalNativeImageInlineDuringParsingSupport;
 import com.oracle.svm.hosted.phases.IntrinsifyMethodHandlesInvocationPlugin;
@@ -388,12 +387,6 @@ public final class TruffleFeature implements com.oracle.svm.core.graal.GraalFeat
     @Override
     public void registerForeignCalls(RuntimeConfiguration runtimeConfig, Providers providers, SnippetReflectionProvider snippetReflection, SubstrateForeignCallsProvider foreignCalls, boolean hosted) {
         foreignCalls.register(providers, SubstrateThreadLocalHandshake.FOREIGN_POLL);
-
-        // TODO why do I need to force compilation here? Shouldn't foreign calls be picked up as
-        // entry points? If I don't do this then any foreign call will just be silently ignored.
-        // maybe change the default behavior to throw?
-        // TODO ImplicitExceptionsFeature
-        CompilationInfoSupport.singleton().registerForcedCompilation(SubstrateThreadLocalHandshake.FOREIGN_POLL.findMethod(providers.getMetaAccess()));
     }
 
     @Override
@@ -513,20 +506,6 @@ public final class TruffleFeature implements com.oracle.svm.core.graal.GraalFeat
         });
 
         r = new Registration(invocationPlugins, CompilerDirectives.class);
-
-        if (!hosted) {
-            r.register0("safepoint", new InvocationPlugin() {
-                @Override
-                public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
-                    /*
-                     * Compiled code on does not need safepoints they are inserted in an extra
-                     * phase.
-                     */
-                    return true;
-                }
-            });
-        }
-
         if (analysis || hosted) {
             /*
              * For AOT compilation and static analysis, we intrinsify CompilerDirectives.castExact
@@ -580,6 +559,9 @@ public final class TruffleFeature implements com.oracle.svm.core.graal.GraalFeat
     @Override
     public void beforeAnalysis(BeforeAnalysisAccess access) {
         BeforeAnalysisAccessImpl config = (BeforeAnalysisAccessImpl) access;
+
+        // register thread local foreign poll
+        config.getBigBang().addRootMethod((AnalysisMethod) SubstrateThreadLocalHandshake.FOREIGN_POLL.findMethod(config.getMetaAccess()));
 
         getLanguageClasses().forEach(RuntimeReflection::registerForReflectiveInstantiation);
 
